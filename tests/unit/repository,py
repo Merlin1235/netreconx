@@ -1,0 +1,55 @@
+from datetime import datetime, timezone
+
+from engine.assessment import Assessment
+from engine.analysis import Finding, RiskLevel
+from engine.scanner import ScanResult
+from engine.services.database import Database
+from engine.services.repository import AssessmentRepository
+
+
+def test_assessment_can_be_saved(tmp_path) -> None:
+    database = Database(tmp_path / "test.db")
+    database.initialize()
+
+    assessment = Assessment(
+        target="127.0.0.1",
+        started_at=datetime.now(timezone.utc),
+        scan_results=[
+            ScanResult(
+                target="127.0.0.1",
+                port=22,
+                state="open",
+                latency_ms=1.2,
+            )
+        ],
+        findings=[
+            Finding(
+                target="127.0.0.1",
+                port=22,
+                service="ssh",
+                title="Exposed SSH service",
+                description="Test finding",
+                risk=RiskLevel.LOW,
+            )
+        ],
+    )
+
+    assessment.complete()
+
+    repository = AssessmentRepository(database)
+
+    assessment_id = repository.save(assessment)
+
+    assert assessment_id > 0
+
+    with database.connect() as connection:
+        row = connection.execute(
+            """
+            SELECT *
+            FROM assessments
+            WHERE id = ?
+            """,
+            (assessment_id,),
+        ).fetchone()
+
+    assert row is not None
